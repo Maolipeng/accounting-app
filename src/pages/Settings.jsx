@@ -8,7 +8,7 @@ import BudgetForm from '../components/BudgetForm'
 import { aiService } from '../services/aiService'
 
 const Settings = () => {
-  const { categories, budgets, deleteCategory, deleteBudget } = useTransactions()
+  const { transactions, categories, budgets, deleteCategory, deleteBudget } = useTransactions()
   const { exportToJSON, exportToCSV, exportToExcel, importFromFile, isOnline, syncStatus } = useStorage()
   const { showToast } = useToast()
   
@@ -80,9 +80,10 @@ const Settings = () => {
 
   const handleExport = (format) => {
     try {
-      if (format === 'json') exportToJSON();
-      if (format === 'csv') exportToCSV();
-      if (format === 'excel') exportToExcel();
+      const data = { transactions, categories, budgets }
+      if (format === 'json') exportToJSON(data);
+      if (format === 'csv') exportToCSV(transactions);
+      if (format === 'excel') exportToExcel(data);
       showToast(`${format.toUpperCase()} 数据导出成功`, 'success')
     } catch (error) {
       showToast('导出失败: ' + error.message, 'error')

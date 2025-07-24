@@ -11,6 +11,8 @@ const AIImport = ({ isOpen, onClose }) => {
   const [extractedTransactions, setExtractedTransactions] = useState([])
   const [inputText, setInputText] = useState('')
   const [selectedImage, setSelectedImage] = useState(null)
+  const [editingTransactionId, setEditingTransactionId] = useState(null)
+  const [editedTransaction, setEditedTransaction] = useState(null)
   const fileInputRef = useRef(null)
   const cameraInputRef = useRef(null)
 
@@ -214,8 +216,30 @@ ${text}
 
   // 编辑交易
   const editTransaction = (transaction) => {
-    // 这里可以打开编辑对话框，暂时简化处理
-    showWarning('编辑功能开发中，请先确认添加后再编辑')
+    setEditingTransactionId(transaction.id)
+    setEditedTransaction({ ...transaction })
+  }
+
+  const handleEditChange = (e) => {
+    const { name, value } = e.target
+    setEditedTransaction((prev) => ({
+      ...prev,
+      [name]: name === 'amount' ? parseFloat(value) || 0 : value,
+    }))
+  }
+
+  const saveEdit = (transactionId) => {
+    setExtractedTransactions((prev) =>
+      prev.map((t) => (t.id === transactionId ? editedTransaction : t))
+    )
+    setEditingTransactionId(null)
+    setEditedTransaction(null)
+    showToast('交易已更新', 'success')
+  }
+
+  const cancelEdit = () => {
+    setEditingTransactionId(null)
+    setEditedTransaction(null)
   }
 
   // 清空所有数据
@@ -351,83 +375,127 @@ ${text}
               </div>
               
               <div className="space-y-3">
-                {extractedTransactions.map((transaction) => (
-                  <div
-                    key={transaction.id}
-                    className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3 mb-2">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            transaction.type === 'income' 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-red-100 text-red-800'
-                          }`}>
-                            {transaction.type === 'income' ? '收入' : '支出'}
-                          </span>
-                          <span className="text-lg font-semibold text-gray-900">
-                            ¥{transaction.amount.toLocaleString()}
-                          </span>
-                          <span className={`text-xs px-2 py-1 rounded ${
-                            transaction.confidence >= 0.8 
-                              ? 'bg-green-100 text-green-700'
-                              : transaction.confidence >= 0.6
-                              ? 'bg-yellow-100 text-yellow-700'
-                              : 'bg-red-100 text-red-700'
-                          }`}>
-                            置信度: {Math.round(transaction.confidence * 100)}%
-                          </span>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-600">
+                {extractedTransactions.map((transaction) =>
+                  editingTransactionId === transaction.id ? (
+                    // Edit mode
+                    <div key={transaction.id} className="bg-blue-50 border border-blue-200 rounded-lg p-4 shadow-sm">
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
-                            <span className="font-medium">分类:</span> {
-                              categories.find(c => c.id === transaction.category)?.name || transaction.category
-                            }
+                            <label className="block text-sm font-medium text-gray-700">类型</label>
+                            <select name="type" value={editedTransaction.type} onChange={handleEditChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                              <option value="expense">支出</option>
+                              <option value="income">收入</option>
+                            </select>
                           </div>
                           <div>
-                            <span className="font-medium">日期:</span> {transaction.date}
+                            <label className="block text-sm font-medium text-gray-700">金额</label>
+                            <input type="number" name="amount" value={editedTransaction.amount} onChange={handleEditChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
                           </div>
-                          {transaction.merchant && (
-                            <div>
-                              <span className="font-medium">商家:</span> {transaction.merchant}
-                            </div>
-                          )}
-                          {transaction.description && (
-                            <div className="sm:col-span-2">
-                              <span className="font-medium">描述:</span> {transaction.description}
-                            </div>
-                          )}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700">分类</label>
+                            <select name="category" value={editedTransaction.category} onChange={handleEditChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                              {categories.map((c) => (
+                                <option key={c.id} value={c.id}>{c.name}</option>
+                              ))}
+                              <option value="other">其它</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700">日期</label>
+                            <input type="date" name="date" value={editedTransaction.date} onChange={handleEditChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block text-sm font-medium text-gray-700">商家</label>
+                            <input type="text" name="merchant" value={editedTransaction.merchant} onChange={handleEditChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="block text-sm font-medium text-gray-700">描述</label>
+                            <textarea name="description" value={editedTransaction.description} onChange={handleEditChange} rows={2} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" />
+                          </div>
                         </div>
-                      </div>
-                      
-                      <div className="flex items-center space-x-2 ml-4">
-                        <button
-                          onClick={() => editTransaction(transaction)}
-                          className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                          title="编辑"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => confirmTransaction(transaction)}
-                          className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition-colors"
-                          title="确认添加"
-                        >
-                          <Check className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => cancelTransaction(transaction.id)}
-                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                          title="取消"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
+                        <div className="flex justify-end space-x-3">
+                          <button onClick={() => saveEdit(transaction.id)} className="btn btn-primary btn-sm">保存</button>
+                          <button onClick={cancelEdit} className="btn btn-secondary btn-sm">取消</button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ) : (
+                    // Display mode
+                    <div key={transaction.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3 mb-2">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              transaction.type === 'income' 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-red-100 text-red-800'
+                            }`}>
+                              {transaction.type === 'income' ? '收入' : '支出'}
+                            </span>
+                            <span className="text-lg font-semibold text-gray-900">
+                              ¥{transaction.amount.toLocaleString()}
+                            </span>
+                            <span className={`text-xs px-2 py-1 rounded ${
+                              transaction.confidence >= 0.8 
+                                ? 'bg-green-100 text-green-700'
+                                : transaction.confidence >= 0.6
+                                ? 'bg-yellow-100 text-yellow-700'
+                                : 'bg-red-100 text-red-700'
+                            }`}>
+                              置信度: {Math.round(transaction.confidence * 100)}%
+                            </span>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-600">
+                            <div>
+                              <span className="font-medium">分类:</span> {
+                                categories.find(c => c.id === transaction.category)?.name || transaction.category
+                              }
+                            </div>
+                            <div>
+                              <span className="font-medium">日期:</span> {transaction.date}
+                            </div>
+                            {transaction.merchant && (
+                              <div>
+                                <span className="font-medium">商家:</span> {transaction.merchant}
+                              </div>
+                            )}
+                            {transaction.description && (
+                              <div className="sm:col-span-2">
+                                <span className="font-medium">描述:</span> {transaction.description}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center space-x-2 ml-4">
+                          <button
+                            onClick={() => editTransaction(transaction)}
+                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                            title="编辑"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => confirmTransaction(transaction)}
+                            className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition-colors"
+                            title="确认添加"
+                          >
+                            <Check className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => cancelTransaction(transaction.id)}
+                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                            title="取消"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                )}
               </div>
               
               {/* 批量操作 */}
@@ -441,12 +509,14 @@ ${text}
                       extractedTransactions.forEach(confirmTransaction)
                     }}
                     className="btn btn-primary text-sm"
+                    disabled={editingTransactionId !== null}
                   >
                     全部添加
                   </button>
                   <button
                     onClick={clearAll}
                     className="btn btn-secondary text-sm"
+                    disabled={editingTransactionId !== null}
                   >
                     全部取消
                   </button>
