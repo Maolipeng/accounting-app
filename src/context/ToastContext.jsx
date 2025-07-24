@@ -24,13 +24,27 @@ export function ToastProvider({ children }) {
   const showWarning = (message, duration) => addToast(message, 'warning', duration)
   const showInfo = (message, duration) => addToast(message, 'info', duration)
 
+  const showToast = (message, type = 'info', duration) => {
+    switch (type) {
+      case 'success':
+        return showSuccess(message, duration)
+      case 'error':
+        return showError(message, duration)
+      case 'warning':
+        return showWarning(message, duration)
+      default:
+        return showInfo(message, duration)
+    }
+  }
+
   const value = {
     addToast,
     removeToast,
     showSuccess,
     showError,
     showWarning,
-    showInfo
+    showInfo,
+    showToast
   }
 
   return (

@@ -389,6 +389,231 @@ export function StorageProvider({ children }) {
     URL.revokeObjectURL(url)
   }
 
+  const exportToExcel = async (data) => {
+    try {
+      // 动态导入 xlsx 库
+      const XLSX = await import('xlsx')
+      
+      // 创建工作簿
+      const workbook = XLSX.utils.book_new()
+      
+      // 交易数据工作表
+      const transactionData = data.transactions.map(t => ({
+        '日期': t.date,
+        '类型': t.type === 'income' ? '收入' : '支出',
+        '分类': t.categoryName || t.category,
+        '金额': t.amount,
+        '备注': t.note || ''
+      }))
+      const transactionSheet = XLSX.utils.json_to_sheet(transactionData)
+      XLSX.utils.book_append_sheet(workbook, transactionSheet, '交易记录')
+      
+      // 分类数据工作表
+      const categoryData = data.categories.map(c => ({
+        '名称': c.name,
+        '图标': c.icon,
+        '颜色': c.color,
+        '类型': c.type === 'income' ? '收入' : '支出'
+      }))
+      const categorySheet = XLSX.utils.json_to_sheet(categoryData)
+      XLSX.utils.book_append_sheet(workbook, categorySheet, '分类设置')
+      
+      // 预算数据工作表
+      const budgetData = data.budgets.map(b => ({
+        '名称': b.name,
+        '分类': b.category,
+        '金额': b.amount,
+        '周期': b.period === 'monthly' ? '月度' : '年度'
+      }))
+      const budgetSheet = XLSX.utils.json_to_sheet(budgetData)
+      XLSX.utils.book_append_sheet(workbook, budgetSheet, '预算设置')
+      
+      // 导出文件
+      XLSX.writeFile(workbook, `accounting_data_${new Date().toISOString().split('T')[0]}.xlsx`)
+    } catch (error) {
+      console.error('Excel导出失败:', error)
+      throw new Error('Excel导出失败，请确保浏览器支持此功能')
+    }
+  }
+
+  // Import Functions
+  const importFromJSON = async (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        try {
+          const data = JSON.parse(e.target.result)
+          
+          // 验证数据格式
+          if (!data.transactions || !Array.isArray(data.transactions)) {
+            throw new Error('无效的JSON格式：缺少交易数据')
+          }
+          
+          // 数据清理和验证
+          const cleanData = {
+            transactions: data.transactions.map(t => ({
+              id: t.id || Date.now() + Math.random(),
+              type: t.type,
+              category: t.category,
+              categoryName: t.categoryName,
+              amount: parseFloat(t.amount),
+              note: t.note || '',
+              date: t.date
+            })),
+            categories: data.categories || [],
+            budgets: data.budgets || []
+          }
+          
+          resolve(cleanData)
+        } catch (error) {
+          reject(new Error(`JSON解析失败: ${error.message}`))
+        }
+      }
+      reader.onerror = () => reject(new Error('文件读取失败'))
+      reader.readAsText(file)
+    })
+  }
+
+  const importFromCSV = async (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        try {
+          const csvText = e.target.result
+          const lines = csvText.split('\n').filter(line => line.trim())
+          
+          if (lines.length < 2) {
+            throw new Error('CSV文件格式无效：至少需要标题行和一行数据')
+          }
+          
+          const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''))
+          const transactions = []
+          
+          for (let i = 1; i < lines.length; i++) {
+            const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''))
+            
+            if (values.length >= 4) {
+              const transaction = {
+                id: Date.now() + Math.random() + i,
+                date: values[0] || new Date().toISOString().split('T')[0],
+                type: values[1] === '收入' ? 'income' : 'expense',
+                category: values[2] || '其他',
+                categoryName: values[2] || '其他',
+                amount: parseFloat(values[3]) || 0,
+                note: values[4] || ''
+              }
+              
+              if (transaction.amount > 0) {
+                transactions.push(transaction)
+              }
+            }
+          }
+          
+          resolve({
+            transactions,
+            categories: [],
+            budgets: []
+          })
+        } catch (error) {
+          reject(new Error(`CSV解析失败: ${error.message}`))
+        }
+      }
+      reader.onerror = () => reject(new Error('文件读取失败'))
+      reader.readAsText(file, 'utf-8')
+    })
+  }
+
+  const importFromExcel = async (file) => {
+    try {
+      // 动态导入 xlsx 库
+      const XLSX = await import('xlsx')
+      
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          try {
+            const data = new Uint8Array(e.target.result)
+            const workbook = XLSX.read(data, { type: 'array' })
+            
+            let transactions = []
+            let categories = []
+            let budgets = []
+            
+            // 读取交易记录工作表
+            if (workbook.SheetNames.includes('交易记录')) {
+              const worksheet = workbook.Sheets['交易记录']
+              const jsonData = XLSX.utils.sheet_to_json(worksheet)
+              
+              transactions = jsonData.map((row, index) => ({
+                id: Date.now() + Math.random() + index,
+                date: row['日期'] || new Date().toISOString().split('T')[0],
+                type: row['类型'] === '收入' ? 'income' : 'expense',
+                category: row['分类'] || '其他',
+                categoryName: row['分类'] || '其他',
+                amount: parseFloat(row['金额']) || 0,
+                note: row['备注'] || ''
+              })).filter(t => t.amount > 0)
+            }
+            
+            // 读取分类设置工作表
+            if (workbook.SheetNames.includes('分类设置')) {
+              const worksheet = workbook.Sheets['分类设置']
+              const jsonData = XLSX.utils.sheet_to_json(worksheet)
+              
+              categories = jsonData.map((row, index) => ({
+                id: Date.now() + Math.random() + index,
+                name: row['名称'] || '未命名',
+                icon: row['图标'] || '📝',
+                color: row['颜色'] || '#3B82F6',
+                type: row['类型'] === '收入' ? 'income' : 'expense'
+              }))
+            }
+            
+            // 读取预算设置工作表
+            if (workbook.SheetNames.includes('预算设置')) {
+              const worksheet = workbook.Sheets['预算设置']
+              const jsonData = XLSX.utils.sheet_to_json(worksheet)
+              
+              budgets = jsonData.map((row, index) => ({
+                id: Date.now() + Math.random() + index,
+                name: row['名称'] || '未命名预算',
+                category: row['分类'] || '所有分类',
+                amount: parseFloat(row['金额']) || 0,
+                period: row['周期'] === '年度' ? 'yearly' : 'monthly'
+              })).filter(b => b.amount > 0)
+            }
+            
+            resolve({
+              transactions,
+              categories,
+              budgets
+            })
+          } catch (error) {
+            reject(new Error(`Excel解析失败: ${error.message}`))
+          }
+        }
+        reader.onerror = () => reject(new Error('文件读取失败'))
+        reader.readAsArrayBuffer(file)
+      })
+    } catch (error) {
+      throw new Error('Excel导入失败，请确保浏览器支持此功能')
+    }
+  }
+
+  const importData = async (file) => {
+    const fileName = file.name.toLowerCase()
+    
+    if (fileName.endsWith('.json')) {
+      return await importFromJSON(file)
+    } else if (fileName.endsWith('.csv')) {
+      return await importFromCSV(file)
+    } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+      return await importFromExcel(file)
+    } else {
+      throw new Error('不支持的文件格式。请选择 JSON、CSV 或 Excel 文件。')
+    }
+  }
+
   // Network status monitoring
   React.useEffect(() => {
     const handleOnline = () => setIsOnline(true)
@@ -410,6 +635,11 @@ export function StorageProvider({ children }) {
     loadData,
     exportToJSON,
     exportToCSV,
+    exportToExcel,
+    importData,
+    importFromJSON,
+    importFromCSV,
+    importFromExcel,
     saveToLocal,
     loadFromLocal,
     getAIInsights,

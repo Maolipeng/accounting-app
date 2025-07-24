@@ -1,23 +1,24 @@
-import React, { useState } from 'react'
-import { Save, Download, Upload, Trash2, Plus, Edit, Palette, Cloud, CloudOff, MessageCircle } from 'lucide-react'
+import React, { useState, useEffect, useRef } from 'react'
+import { Settings as SettingsIcon, Plus, Edit, Trash2, Download, Upload, Cloud, Wifi, WifiOff, MessageCircle } from 'lucide-react'
 import { useTransactions } from '../context/TransactionContext'
 import { useStorage } from '../context/StorageContext'
 import { useToast } from '../context/ToastContext'
 import CategoryForm from '../components/CategoryForm'
 import BudgetForm from '../components/BudgetForm'
-import aiService from '../services/aiService'
+import { aiService } from '../services/aiService'
 
 const Settings = () => {
-  const { categories, budgets, transactions, dispatch } = useTransactions()
-  const { isOnline, syncStatus, exportToJSON, exportToCSV } = useStorage()
-  const { showSuccess, showError, showWarning } = useToast()
-  const [activeTab, setActiveTab] = useState('categories')
-  const [showAddCategory, setShowAddCategory] = useState(false)
-  const [showAddBudget, setShowAddBudget] = useState(false)
+  const { categories, budgets, deleteCategory, deleteBudget } = useTransactions()
+  const { exportToJSON, exportToCSV, exportToExcel, importFromFile, isOnline, syncStatus } = useStorage()
+  const { showToast } = useToast()
+  
+  const [showCategoryForm, setShowCategoryForm] = useState(false)
+  const [showBudgetForm, setShowBudgetForm] = useState(false)
   const [editingCategory, setEditingCategory] = useState(null)
   const [editingBudget, setEditingBudget] = useState(null)
+  
   const [aiConfig, setAiConfig] = useState(() => {
-    const saved = localStorage.getItem('ai_config')
+    const saved = localStorage.getItem('aiConfig')
     return saved ? JSON.parse(saved) : {
       provider: 'deepseek',
       apiKey: '',
@@ -26,599 +27,311 @@ const Settings = () => {
     }
   })
 
-  const tabs = [
-    { id: 'categories', label: '分类', icon: Palette },
-    { id: 'budgets', label: '预算', icon: Save },
-    { id: 'data', label: '数据管理', icon: Download },
-    { id: 'sync', label: '同步与备份', icon: Cloud },
-    { id: 'ai', label: 'AI助手', icon: MessageCircle }
-  ]
-
-  const handleExportJSON = () => {
-    exportToJSON({ transactions, categories, budgets })
-  }
-
-  const handleExportCSV = () => {
-    exportToCSV(transactions)
-  }
-
-  const handleSaveAIConfig = () => {
-    localStorage.setItem('ai_config', JSON.stringify(aiConfig))
-    showSuccess('AI配置已保存！')
-  }
-
-  const handleTestAIConnection = async () => {
-    if (!aiConfig.apiKey) {
-      showWarning('请先输入API密钥')
-      return
-    }
-
-    try {
-      // 更新AI服务配置
-      aiService.updateConfig(aiConfig)
-      
-      // 测试连接
-      await aiService.testConnection()
-      showSuccess('连接测试成功！')
-    } catch (error) {
-      showError('连接测试失败：' + error.message)
-    }
-  }
-
-  const handleImportData = (event) => {
-    const file = event.target.files[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        try {
-          const data = JSON.parse(e.target.result)
-          if (data.transactions) {
-            dispatch({ type: 'SET_TRANSACTIONS', payload: data.transactions })
-          }
-          if (data.categories) {
-            // Merge with existing categories
-            const existingIds = categories.map(c => c.id)
-            const newCategories = data.categories.filter(c => !existingIds.includes(c.id))
-            newCategories.forEach(category => {
-              dispatch({ type: 'ADD_CATEGORY', payload: category })
-            })
-          }
-          if (data.budgets) {
-            dispatch({ type: 'SET_BUDGETS', payload: data.budgets })
-          }
-          showSuccess('数据导入成功！')
-        } catch (error) {
-          showError('数据导入失败，请检查文件格式')
-        }
+  const [zhipuConfig, setZhipuConfig] = useState(() => {
+    const saved = localStorage.getItem('zhipuConfig');
+    if (saved) {
+      let loadedConfig = JSON.parse(saved);
+      if (loadedConfig.model === 'GLM-4-Flash-250414') {
+        loadedConfig.model = 'glm-4v';
+        localStorage.setItem('zhipuConfig', JSON.stringify(loadedConfig));
       }
-      reader.readAsText(file)
+      return loadedConfig;
+    }
+    return {
+      apiKey: '',
+      model: 'glm-4v',
+      enabled: false
+    };
+  })
+
+  const saveAIConfig = () => {
+    try {
+      localStorage.setItem('aiConfig', JSON.stringify(aiConfig))
+      aiService.updateConfig(aiConfig)
+      showToast('AI配置已保存', 'success')
+    } catch (error) {
+      showToast('保存AI配置失败: ' + error.message, 'error')
     }
   }
+
+  const isInitialZhipuMount = useRef(true);
+  useEffect(() => {
+    if (isInitialZhipuMount.current) {
+      isInitialZhipuMount.current = false;
+    } else {
+      try {
+        localStorage.setItem('zhipuConfig', JSON.stringify(zhipuConfig));
+        aiService.updateZhipuConfig(zhipuConfig);
+        showToast('智谱AI配置已自动保存', 'success');
+      } catch (error) {
+        showToast('保存智谱AI配置失败: ' + error.message, 'error');
+      }
+    }
+  }, [zhipuConfig]);
+
+  const testAIConnection = async () => {
+    try {
+      await aiService.askQuestion('你好，请回复"连接成功"')
+      showToast('AI连接测试成功！', 'success')
+    } catch (error) {
+      showToast('AI连接测试失败: ' + error.message, 'error')
+    }
+  }
+
+  const handleExport = (format) => {
+    try {
+      if (format === 'json') exportToJSON();
+      if (format === 'csv') exportToCSV();
+      if (format === 'excel') exportToExcel();
+      showToast(`${format.toUpperCase()} 数据导出成功`, 'success')
+    } catch (error) {
+      showToast('导出失败: ' + error.message, 'error')
+    }
+  }
+
+  const handleImportData = async (event) => {
+    const file = event.target.files[0]
+    if (!file) return
+    try {
+      const result = await importFromFile(file)
+      showToast(`导入成功！交易: ${result.transactions}条, 分类: ${result.categories}条, 预算: ${result.budgets}条`, 'success')
+    } catch (error) {
+      showToast('导入失败: ' + error.message, 'error')
+    }
+    event.target.value = ''
+  }
+
+  useEffect(() => {
+    aiService.updateConfig(aiConfig)
+  }, [])
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-          <h1 className="text-2xl font-bold text-gray-900">设置</h1>
-          <p className="text-gray-600">管理您的分类、预算和数据</p>
+      <div className="flex items-center space-x-3">
+        <SettingsIcon className="h-8 w-8 text-gray-600" />
+        <h1 className="text-2xl font-bold">设置</h1>
       </div>
 
-      {/* Tabs */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8 overflow-x-auto">
-          {tabs.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => setActiveTab(id)}
-              className={`flex-shrink-0 flex items-center space-x-2 py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === id
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <Icon className="h-4 w-4" />
-              <span>{label}</span>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="card">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold">分类管理</h2>
+            <button onClick={() => setShowCategoryForm(true)} className="btn-primary flex items-center space-x-2">
+              <Plus className="h-4 w-4" />
+              <span>添加分类</span>
             </button>
-          ))}
-        </nav>
-      </div>
-
-      {/* Tab Content */}
-      <div className="mt-6">
-        {/* Categories Tab */}
-        {activeTab === 'categories' && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">管理分类</h2>
-              <button
-                onClick={() => setShowAddCategory(true)}
-                className="btn btn-primary flex items-center space-x-2"
-              >
-                <Plus className="h-4 w-4" />
-                <span>添加分类</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {categories.map(category => (
-                <div key={category.id} className="card">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div
-                        className="w-10 h-10 rounded-full flex items-center justify-center text-white"
-                        style={{ backgroundColor: category.color }}
-                      >
-                        {category.icon}
-                      </div>
-                      <div>
-                        <h3 className="font-medium text-gray-900">{category.name}</h3>
-                        <p className="text-sm text-gray-500">ID: {category.id}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => setEditingCategory(category)}
-                        className="p-1 text-gray-400 hover:text-primary-600"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          showWarning('确定要删除此分类吗？此操作无法撤销')
-                          // 这里可以添加确认对话框组件
-                          setTimeout(() => {
-                            dispatch({ type: 'DELETE_CATEGORY', payload: category.id })
-                            showSuccess('分类已删除')
-                          }, 2000)
-                        }}
-                        className="p-1 text-gray-400 hover:text-red-600 transition-colors"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
           </div>
-        )}
-
-        {/* Budgets Tab */}
-        {activeTab === 'budgets' && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-900">预算管理</h2>
-              <button
-                onClick={() => setShowAddBudget(true)}
-                className="btn btn-primary flex items-center space-x-2"
-              >
-                <Plus className="h-4 w-4" />
-                <span>添加预算</span>
-              </button>
-            </div>
-
-            {budgets.length === 0 ? (
-              <div className="card text-center py-8">
-                <div className="text-4xl mb-4">💰</div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">暂无预算设置</h3>
-                <p className="text-gray-600 mb-4">创建预算来跟踪您的支出限额</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {budgets.map(budget => {
-                  const spent = transactions
-                    .filter(t => 
-                      t.type === 'expense' && 
-                      (budget.category === 'all' || t.category === budget.category) &&
-                      new Date(t.date).getMonth() === new Date().getMonth()
-                    )
-                    .reduce((sum, t) => sum + t.amount, 0)
-                  
-                  const percentage = (spent / budget.amount) * 100
-                  const isOverBudget = percentage > 100
-
-                  return (
-                    <div key={budget.id} className="card">
-                      <div className="flex items-center justify-between mb-4">
-                        <div>
-                          <h3 className="font-medium text-gray-900">{budget.name}</h3>
-                          <p className="text-sm text-gray-500">
-                             {budget.category === 'all' ? '所有分类' : 
-                             categories.find(c => c.id === budget.category)?.name || budget.category}
-                          </p>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <button
-                            onClick={() => setEditingBudget(budget)}
-                            className="p-1 text-gray-400 hover:text-primary-600"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => {
-                              showWarning('确定要删除此预算吗？此操作无法撤销')
-                              // 这里可以添加确认对话框组件
-                              setTimeout(() => {
-                                dispatch({ type: 'DELETE_BUDGET', payload: budget.id })
-                                showSuccess('预算已删除')
-                              }, 2000)
-                            }}
-                            className="p-1 text-gray-400 hover:text-red-600 transition-colors"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                        <span>已花费: ¥{spent.toLocaleString()}</span>
-                        <span>预算: ¥{budget.amount.toLocaleString()}</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div
-                            className={`h-2 rounded-full ${
-                              isOverBudget ? 'bg-red-500' : 'bg-blue-500'
-                            }`}
-                            style={{ width: `${Math.min(percentage, 100)}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between text-xs">
-                          <span className={isOverBudget ? 'text-red-600' : 'text-gray-600'}>
-                            已使用 {percentage.toFixed(1)}%
-                          </span>
-                          {isOverBudget && (
-                            <span className="text-red-600">
-                              超出预算 ¥{(spent - budget.amount).toLocaleString()}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Data Management Tab */}
-        {activeTab === 'data' && (
-          <div className="space-y-6">
-            <h2 className="text-lg font-semibold text-gray-900">数据管理</h2>
-
-            <div className="card">
-              <h3 className="text-md font-medium text-gray-900 mb-4">导出数据</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <button
-                  onClick={handleExportJSON}
-                  className="btn btn-secondary flex items-center justify-center space-x-2 p-4"
-                >
-                  <Download className="h-5 w-5" />
-                  <div className="text-left">
-                    <div className="font-medium">导出为JSON</div>
-                    <div className="text-sm text-gray-600">包含所有数据的完整备份</div>
-                  </div>
-                </button>
-                <button
-                  onClick={handleExportCSV}
-                  className="btn btn-secondary flex items-center justify-center space-x-2 p-4"
-                >
-                  <Download className="h-5 w-5" />
-                  <div className="text-left">
-                    <div className="font-medium">导出为CSV</div>
-                    <div className="text-sm text-gray-600">仅交易记录，适用于Excel</div>
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            <div className="card">
-              <h3 className="text-md font-medium text-gray-900 mb-4">导入数据</h3>
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                <Upload className="h-8 w-8 text-gray-400 mx-auto mb-4" />
-                <p className="text-sm text-gray-600 mb-4">
-                  从JSON备份文件导入数据
-                </p>
-                <input
-                  type="file"
-                  accept=".json"
-                  onChange={handleImportData}
-                  className="hidden"
-                  id="import-file"
-                />
-                <label
-                  htmlFor="import-file"
-                  className="btn btn-primary cursor-pointer"
-                >
-                  选择文件
-                </label>
-              </div>
-            </div>
-
-            <div className="card">
-              <h3 className="text-md font-medium text-gray-900 mb-4">数据摘要</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">{transactions.length}</div>
-                  <div className="text-sm text-gray-600">交易记录</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">{categories.length}</div>
-                  <div className="text-sm text-gray-600">分类</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">{budgets.length}</div>
-                  <div className="text-sm text-gray-600">预算</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* AI Assistant Tab */}
-        {activeTab === 'ai' && (
-          <div className="space-y-6">
-            <h2 className="text-lg font-semibold text-gray-900">AI助手配置</h2>
-
-            <div className="card">
-              <h3 className="text-md font-medium text-gray-900 mb-4">AI服务提供商</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    选择AI服务商
-                  </label>
-                  <select
-                    value={aiConfig.provider}
-                    onChange={(e) => {
-                      const newProvider = e.target.value;
-                      let newModel = '';
-                      if (newProvider === 'deepseek') newModel = 'deepseek-chat';
-                      if (newProvider === 'moonshot') newModel = 'moonshot-v1-8k';
-                      if (newProvider === 'openai') newModel = 'gpt-3.5-turbo';
-                      if (newProvider === 'anthropic') newModel = 'claude-3-haiku';
-                      if (newProvider === 'google') newModel = 'gemini-pro';
-                      if (newProvider === 'azure') newModel = 'gpt-35-turbo';
-
-                      setAiConfig(prev => ({ 
-                        ...prev, 
-                        provider: newProvider,
-                        model: newModel
-                      }))
-                    }}
-                    className="input"
-                  >
-                    <option value="deepseek">DeepSeek (深求)</option>
-                    <option value="moonshot">Moonshot (Kimi)</option>
-                    <option value="openai">OpenAI (GPT)</option>
-                    <option value="anthropic">Anthropic (Claude)</option>
-                    <option value="google">Google (Gemini)</option>
-                    <option value="azure">Azure OpenAI</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    API密钥
-                  </label>
-                  <input
-                    type="password"
-                    value={aiConfig.apiKey}
-                    onChange={(e) => setAiConfig(prev => ({ ...prev, apiKey: e.target.value }))}
-                    className="input"
-                    placeholder="输入您的API密钥"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    您的API密钥将安全存储在本地，不会上传到服务器
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    模型选择
-                  </label>
-                  <select
-                    value={aiConfig.model}
-                    onChange={(e) => setAiConfig(prev => ({ ...prev, model: e.target.value }))}
-                    className="input"
-                  >
-                    {aiConfig.provider === 'deepseek' && (
-                      <>
-                        <option value="deepseek-chat">DeepSeek-Chat</option>
-                        <option value="deepseek-coder">DeepSeek-Coder</option>
-                      </>
-                    )}
-                    {aiConfig.provider === 'moonshot' && (
-                      <>
-                        <option value="moonshot-v1-8k">Moonshot-v1-8k</option>
-                        <option value="moonshot-v1-32k">Moonshot-v1-32k</option>
-                        <option value="moonshot-v1-128k">Moonshot-v1-128k</option>
-                      </>
-                    )}
-                    {aiConfig.provider === 'openai' && (
-                      <>
-                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                        <option value="gpt-4">GPT-4</option>
-                        <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                      </>
-                    )}
-                    {aiConfig.provider === 'anthropic' && (
-                      <>
-                        <option value="claude-3-haiku">Claude 3 Haiku</option>
-                        <option value="claude-3-sonnet">Claude 3 Sonnet</option>
-                        <option value="claude-3-opus">Claude 3 Opus</option>
-                      </>
-                    )}
-                    {aiConfig.provider === 'google' && (
-                      <>
-                        <option value="gemini-pro">Gemini Pro</option>
-                      </>
-                    )}
-                    {aiConfig.provider === 'azure' && (
-                      <>
-                        <option value="gpt-35-turbo">GPT-3.5 Turbo</option>
-                        <option value="gpt-4">GPT-4</option>
-                      </>
-                    )}
-                  </select>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-medium text-gray-900">启用AI助手</h4>
-                    <p className="text-sm text-gray-600">开启后可使用真实的AI分析和建议</p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      className="sr-only peer" 
-                      checked={aiConfig.enabled}
-                      onChange={(e) => setAiConfig(prev => ({ ...prev, enabled: e.target.checked }))}
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            <div className="card">
-              <h3 className="text-md font-medium text-gray-900 mb-4">如何获取API密钥</h3>
-              <div className="space-y-3 text-sm text-gray-600">
-                <p>请参考您选择的AI服务商官方文档获取API密钥。</p>
-              </div>
-            </div>
-
-            <div className="flex space-x-4">
-              <button
-                onClick={handleTestAIConnection}
-                className="btn btn-secondary"
-                disabled={!aiConfig.apiKey}
-              >
-                测试连接
-              </button>
-              <button
-                onClick={handleSaveAIConfig}
-                className="btn btn-primary"
-              >
-                保存配置
-              </button>
-            </div>
-
-            <div className="card">
-              <h3 className="text-md font-medium text-gray-900 mb-4">使用统计</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">
-                    {aiService.getUsageStats().monthly}
-                  </div>
-                  <div className="text-sm text-gray-600">本月查询次数</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">
-                    {aiService.getUsageStats().total}
-                  </div>
-                  <div className="text-sm text-gray-600">总查询次数</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">
-                    {aiConfig.enabled && aiConfig.apiKey ? '已启用' : '已禁用'}
-                  </div>
-                  <div className="text-sm text-gray-600">服务状态</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Sync & Backup Tab */}
-        {activeTab === 'sync' && (
-          <div className="space-y-6">
-            <h2 className="text-lg font-semibold text-gray-900">同步与备份</h2>
-            <div className="card">
-              <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            {categories.map((category) => (
+              <div key={category.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                 <div className="flex items-center space-x-3">
-                  {isOnline ? (
-                    <Cloud className="h-6 w-6 text-green-600" />
-                  ) : (
-                    <CloudOff className="h-6 w-6 text-gray-400" />
-                  )}
+                  <span className="text-2xl">{category.icon}</span>
                   <div>
-                    <h3 className="font-medium text-gray-900">
-                      {isOnline ? '在线' : '离线'}
-                    </h3>
-                    <p className="text-sm text-gray-600">
-                      {isOnline 
-                        ? '您的数据正在自动同步' 
-                        : '连接到互联网以启用同步'
-                      }
-                    </p>
+                    <div className="font-medium">{category.name}</div>
+                    <div className="text-sm text-gray-500">{category.type === 'income' ? '收入' : '支出'}</div>
                   </div>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <div className={`w-3 h-3 rounded-full ${
-                    syncStatus === 'syncing' ? 'bg-yellow-500 animate-pulse' :
-                    syncStatus === 'success' ? 'bg-green-500' :
-                    syncStatus === 'error' ? 'bg-red-500' :
-                    'bg-gray-300'
-                  }`} />
-                  <span className="text-sm text-gray-600 capitalize">{syncStatus}</span>
+                <div className="flex items-center space-x-1">
+                  <button onClick={() => { setEditingCategory(category); setShowCategoryForm(true); }} className="text-blue-600 hover:text-blue-700 p-2 rounded-full hover:bg-blue-100">
+                    <Edit className="h-4 w-4" />
+                  </button>
+                  <button onClick={() => deleteCategory(category.id)} className="text-red-600 hover:text-red-700 p-2 rounded-full hover:bg-red-100">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
               </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold">预算管理</h2>
+            <button onClick={() => setShowBudgetForm(true)} className="btn-primary flex items-center space-x-2">
+              <Plus className="h-4 w-4" />
+              <span>添加预算</span>
+            </button>
+          </div>
+          <div className="space-y-2">
+            {budgets.map((budget) => (
+              <div key={budget.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div>
+                  <div className="font-medium">{budget.categoryName}</div>
+                  <div className="text-sm text-gray-500">¥{budget.amount.toLocaleString()}/月</div>
+                </div>
+                <div className="flex items-center space-x-1">
+                  <button onClick={() => { setEditingBudget(budget); setShowBudgetForm(true); }} className="text-blue-600 hover:text-blue-700 p-2 rounded-full hover:bg-blue-100">
+                    <Edit className="h-4 w-4" />
+                  </button>
+                  <button onClick={() => deleteBudget(budget.id)} className="text-red-600 hover:text-red-700 p-2 rounded-full hover:bg-red-100">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="card">
+          <h2 className="text-lg font-semibold mb-4">数据管理</h2>
+          <div className="space-y-6">
+            <div>
+              <h4 className="font-medium mb-2">导出数据</h4>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => handleExport('json')} className="btn-secondary flex items-center space-x-2">
+                  <Download className="h-4 w-4" />
+                  <span>JSON</span>
+                </button>
+                <button onClick={() => handleExport('csv')} className="btn-secondary flex items-center space-x-2">
+                  <Download className="h-4 w-4" />
+                  <span>CSV</span>
+                </button>
+                <button onClick={() => handleExport('excel')} className="btn-secondary flex items-center space-x-2">
+                  <Download className="h-4 w-4" />
+                  <span>Excel</span>
+                </button>
+              </div>
             </div>
-            <div className="card">
-              <h3 className="text-md font-medium text-gray-900 mb-4">手动备份</h3>
-              <p className="text-sm text-gray-600 mb-4">
-                创建数据的手动备份，确保数据安全存储。
-              </p>
-              <button
-                onClick={handleExportJSON}
-                className="btn btn-primary flex items-center space-x-2"
-              >
-                <Download className="h-4 w-4" />
-                <span>创建备份</span>
-              </button>
+            <div>
+              <h4 className="font-medium mb-2">导入数据</h4>
+              <input
+                type="file"
+                accept=".json,.csv,.xlsx,.xls"
+                onChange={handleImportData}
+                className="input"
+              />
+              <p className="text-xs text-gray-500 mt-2">支持JSON、CSV、Excel格式。</p>
             </div>
           </div>
-        )}
+        </div>
+
+        <div className="card">
+          <h2 className="text-lg font-semibold mb-4">云同步状态</h2>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-gray-600">网络状态</span>
+              <div className={`flex items-center space-x-2 text-sm font-medium ${isOnline ? 'text-green-600' : 'text-red-600'}`}>
+                {isOnline ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
+                <span>{isOnline ? '在线' : '离线'}</span>
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-gray-600">同步状态</span>
+              <div className="flex items-center space-x-2 text-sm font-medium text-blue-600">
+                <Cloud className="h-4 w-4" />
+                <span>{syncStatus}</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {showAddCategory && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowAddCategory(false)}>
-          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <CategoryForm onClose={() => setShowAddCategory(false)} />
+      <div className="card">
+        <h2 className="text-lg font-semibold mb-4 flex items-center">
+          <MessageCircle className="h-6 w-6 mr-2 text-blue-600" />
+          AI助手配置
+        </h2>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <h3 className="font-medium">AI服务提供商</h3>
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-700">选择AI服务商</label>
+              <select
+                value={aiConfig.provider}
+                onChange={(e) => {
+                  const newProvider = e.target.value;
+                  let newModel = '';
+                  if (newProvider === 'deepseek') newModel = 'deepseek-chat';
+                  if (newProvider === 'moonshot') newModel = 'moonshot-v1-8k';
+                  if (newProvider === 'openai') newModel = 'gpt-3.5-turbo';
+                  setAiConfig(prev => ({ ...prev, provider: newProvider, model: newModel }))
+                }}
+                className="input"
+              >
+                <option value="deepseek">DeepSeek (深求)</option>
+                <option value="moonshot">Moonshot (Kimi)</option>
+                <option value="openai">OpenAI (GPT)</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="api-key" className="block text-sm font-medium text-gray-700">API密钥</label>
+              <input
+                id="api-key"
+                type="password"
+                value={aiConfig.apiKey}
+                onChange={(e) => setAiConfig(prev => ({ ...prev, apiKey: e.target.value }))}
+                className="input"
+                placeholder="输入您的API密钥"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <label htmlFor="ai-enabled" className="text-sm font-medium text-gray-700">启用AI助手</label>
+                <p className="text-xs text-gray-500">开启后可使用真实的AI分析和建议</p>
+              </div>
+              <input
+                id="ai-enabled"
+                type="checkbox"
+                checked={aiConfig.enabled}
+                onChange={(e) => setAiConfig(prev => ({ ...prev, enabled: e.target.checked }))}
+                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+            </div>
+            <div className="flex space-x-2">
+              <button onClick={saveAIConfig} className="btn-primary flex-1">保存配置</button>
+              <button onClick={testAIConnection} className="btn-secondary">测试连接</button>
+            </div>
           </div>
-        </div>
-      )}
 
-      {editingCategory && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setEditingCategory(null)}>
-          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <CategoryForm 
-              category={editingCategory} 
-              onClose={() => setEditingCategory(null)} 
-            />
-          </div>
+          {aiConfig.provider === 'deepseek' && (
+            <div className="space-y-4 p-4 border rounded-lg bg-gray-50">
+              <h3 className="font-medium flex items-center">🖼️ 智谱AI图片识别配置</h3>
+              <p className="text-sm text-gray-600">由于DeepSeek不支持图片理解，AI导入功能将使用智谱AI进行图片识别。</p>
+              <div className="space-y-2">
+                <label htmlFor="zhipu-api-key" className="block text-sm font-medium text-gray-700">智谱AI API密钥</label>
+                <input
+                  id="zhipu-api-key"
+                  type="password"
+                  value={zhipuConfig.apiKey}
+                  onChange={(e) => setZhipuConfig(prev => ({ ...prev, apiKey: e.target.value }))}
+                  className="input"
+                  placeholder="输入智谱AI的API密钥"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">模型选择</label>
+                <select
+                  value={zhipuConfig.model}
+                  onChange={(e) => setZhipuConfig(prev => ({ ...prev, model: e.target.value }))}
+                  className="input"
+                >
+                  <option value="glm-4v">GLM-4V (图片识别推荐)</option>
+                  <option value="glm-4v-plus">GLM-4V-Plus</option>
+                  <option value="GLM-4.1V-Thinking-Flash">GLM-4.1V-Thinking-Flash</option>
+                  <option value="GLM-4V-Flash">GLM-4V-Flash</option>
+                  <option value="GLM-4-Flash">GLM-4-Flash (纯文本)</option>
+                </select>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <label htmlFor="zhipu-enabled" className="text-sm font-medium text-gray-700">启用图片识别</label>
+                  <p className="text-xs text-gray-500">开启后可使用AI导入功能</p>
+                </div>
+                <input
+                  id="zhipu-enabled"
+                  type="checkbox"
+                  checked={zhipuConfig.enabled}
+                  onChange={(e) => setZhipuConfig(prev => ({ ...prev, enabled: e.target.checked }))}
+                  className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
-      {showAddBudget && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowAddBudget(false)}>
-          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <BudgetForm onClose={() => setShowAddBudget(false)} />
-          </div>
-        </div>
-      )}
-
-      {editingBudget && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setEditingBudget(null)}>
-          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <BudgetForm 
-              budget={editingBudget} 
-              onClose={() => setEditingBudget(null)} 
-            />
-          </div>
-        </div>
-      )}
+      {showCategoryForm && <CategoryForm isOpen={showCategoryForm} onClose={() => setShowCategoryForm(false)} editingCategory={editingCategory} />}
+      {showBudgetForm && <BudgetForm isOpen={showBudgetForm} onClose={() => setShowBudgetForm(false)} editingBudget={editingBudget} />}
     </div>
   )
 }

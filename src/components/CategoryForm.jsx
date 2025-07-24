@@ -1,200 +1,217 @@
-import React, { useState, useEffect } from 'react'
-import { X, Save } from 'lucide-react'
-import { useTransactions } from '../context/TransactionContext'
+import React, { useState, useEffect } from 'react';
+import Modal from './Modal';
+import { useTransactions } from '../context/TransactionContext';
+import { useToast } from '../context/ToastContext';
 
-const COLORS = [
-  '#ef4444', '#f59e0b', '#84cc16', '#10b981', '#06b6d4', 
-  '#3b82f6', '#8b5cf6', '#d946ef', '#ec4899', '#6b7280'
-]
+// 常用分类预设
+const PRESET_CATEGORIES = {
+  expense: [
+    { name: '餐饮', icon: '🍽️' },
+    { name: '交通', icon: '🚗' },
+    { name: '购物', icon: '🛍️' },
+    { name: '娱乐', icon: '🎮' },
+    { name: '医疗', icon: '🏥' },
+    { name: '教育', icon: '📚' },
+    { name: '住房', icon: '🏠' },
+    { name: '通讯', icon: '📱' },
+    { name: '服装', icon: '👕' },
+    { name: '美容', icon: '💄' },
+    { name: '旅游', icon: '✈️' },
+    { name: '运动', icon: '⚽' },
+    { name: '宠物', icon: '🐕' },
+    { name: '礼品', icon: '🎁' },
+    { name: '保险', icon: '🛡️' },
+    { name: '维修', icon: '🔧' },
+    { name: '水电费', icon: '💡' },
+    { name: '网费', icon: '🌐' },
+    { name: '停车费', icon: '🅿️' },
+    { name: '其他', icon: '📦' }
+  ],
+  income: [
+    { name: '工资', icon: '💼' },
+    { name: '奖金', icon: '🏆' },
+    { name: '投资', icon: '📈' },
+    { name: '兼职', icon: '💻' },
+    { name: '红包', icon: '🧧' },
+    { name: '退款', icon: '💰' },
+    { name: '租金', icon: '🏠' },
+    { name: '利息', icon: '🏦' },
+    { name: '分红', icon: '💎' },
+    { name: '奖励', icon: '🎖️' },
+    { name: '礼金', icon: '💝' },
+    { name: '补贴', icon: '🎯' },
+    { name: '其他', icon: '💸' }
+  ]
+};
 
-const ICONS = [
-  '🍽️', '🚗', '🎮', '🛍️', '🏥', '📚', '🏠', '💰', '📈', '📝',
-  '✈️', '🏋️', '🎬', '🎵', '👕', '💄', '🎁', '🏆', '🧾', '🔧'
-]
+const CategoryForm = ({ isOpen, onClose, editingCategory }) => {
+  const [name, setName] = useState('');
+  const [type, setType] = useState('expense');
+  const [icon, setIcon] = useState('💰');
+  const [showPresets, setShowPresets] = useState(false);
+  const { addCategory, updateCategory } = useTransactions();
+  const { showToast } = useToast();
 
-const CategoryForm = ({ category = null, onClose }) => {
-  const { dispatch } = useTransactions()
-  const [formData, setFormData] = useState({
-    name: '',
-    icon: '📝',
-    color: '#6b7280',
-    id: ''
-  })
-  const [errors, setErrors] = useState({})
-
-  // Populate form if editing existing category
   useEffect(() => {
-    if (category) {
-      setFormData({
-        name: category.name,
-        icon: category.icon,
-        color: category.color,
-        id: category.id
-      })
+    if (editingCategory) {
+      setName(editingCategory.name);
+      setType(editingCategory.type);
+      setIcon(editingCategory.icon);
+      setShowPresets(false);
+    } else {
+      // Reset form when adding a new category
+      setName('');
+      setType('expense');
+      setIcon('💰');
+      setShowPresets(false);
     }
-  }, [category])
-
-  const validateForm = () => {
-    const newErrors = {}
-
-    if (!formData.name.trim()) {
-      newErrors.name = '请输入分类名称'
-    }
-
-    if (!formData.icon) {
-      newErrors.icon = '请选择图标'
-    }
-
-    if (!formData.color) {
-      newErrors.color = '请选择颜色'
-    }
-
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }
+  }, [editingCategory, isOpen]);
 
   const handleSubmit = (e) => {
-    e.preventDefault()
-    
-    if (!validateForm()) {
-      return
+    e.preventDefault();
+    if (!name.trim() || !icon.trim()) {
+      showToast('分类名称和图标不能为空', 'error');
+      return;
     }
 
-    try {
-      const categoryData = {
-        id: formData.id || formData.name.toLowerCase().replace(/\s+/g, '_'),
-        name: formData.name.trim(),
-        icon: formData.icon,
-        color: formData.color
-      }
+    const categoryData = { name, type, icon };
 
-      if (category) {
-        dispatch({ type: 'UPDATE_CATEGORY', payload: categoryData })
-      } else {
-        dispatch({ type: 'ADD_CATEGORY', payload: categoryData })
-      }
-
-      onClose()
-    } catch (error) {
-      console.error('Failed to save category:', error)
-      setErrors({ submit: '保存分类失败，请重试。' })
+    if (editingCategory) {
+      updateCategory({ ...editingCategory, ...categoryData });
+      showToast('分类更新成功', 'success');
+    } else {
+      addCategory(categoryData);
+      showToast('分类添加成功', 'success');
     }
-  }
+    onClose();
+  };
 
-  const handleChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }))
-    }
-  }
+  const handlePresetSelect = (preset) => {
+    setName(preset.name);
+    setIcon(preset.icon);
+    setShowPresets(false);
+  };
+
+  const currentPresets = PRESET_CATEGORIES[type];
 
   return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold text-gray-900">
-          {category ? '编辑分类' : '添加新分类'}
-        </h2>
-        <button
-          onClick={onClose}
-          className="text-gray-400 hover:text-gray-600 transition-colors"
-        >
-          <X className="h-6 w-6" />
-        </button>
-      </div>
-
-      {/* Form */}
+    <Modal isOpen={isOpen} onClose={onClose} title={editingCategory ? '编辑分类' : '添加新分类'}>
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Category Name */}
         <div>
-          <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="category-name" className="block text-sm font-medium text-gray-700">
             分类名称
           </label>
-          <input
-            type="text"
-            id="name"
-            value={formData.name}
-            onChange={(e) => handleChange('name', e.target.value)}
-            className={`input ${errors.name ? 'border-red-500' : ''}`}
-            placeholder="例如：餐饮、交通等"
-          />
-          {errors.name && <p className="text-sm text-red-600 mt-1">{errors.name}</p>}
-        </div>
-
-        {/* Icon Selection */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            图标
-          </label>
-          <div className="grid grid-cols-5 gap-2">
-            {ICONS.map(icon => (
+          <div className="mt-1 flex space-x-2">
+            <input
+              type="text"
+              id="category-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="input flex-1"
+              placeholder="例如：餐饮、交通"
+              required
+            />
+            {!editingCategory && (
               <button
-                key={icon}
                 type="button"
-                onClick={() => handleChange('icon', icon)}
-                className={`p-3 rounded-lg border-2 transition-colors ${
-                  formData.icon === icon
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
+                onClick={() => setShowPresets(!showPresets)}
+                className="px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
               >
-                <div className="text-center text-2xl">{icon}</div>
+                {showPresets ? '隐藏' : '预设'}
               </button>
-            ))}
+            )}
           </div>
-          {errors.icon && <p className="text-sm text-red-600 mt-1">{errors.icon}</p>}
         </div>
 
-        {/* Color Selection */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            颜色
-          </label>
-          <div className="grid grid-cols-5 gap-2">
-            {COLORS.map(color => (
-              <button
-                key={color}
-                type="button"
-                onClick={() => handleChange('color', color)}
-                className={`h-10 rounded-lg border-2 transition-colors ${
-                  formData.color === color
-                    ? 'border-blue-500'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-                style={{ backgroundColor: color }}
-              />
-            ))}
-          </div>
-          {errors.color && <p className="text-sm text-red-600 mt-1">{errors.color}</p>}
-        </div>
-
-        {/* Submit Error */}
-        {errors.submit && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-            <p className="text-sm text-red-600">{errors.submit}</p>
+        {/* 预设分类选择 */}
+        {showPresets && !editingCategory && (
+          <div className="bg-gray-50 p-3 rounded-lg">
+            <h4 className="text-sm font-medium text-gray-700 mb-2">
+              选择常用{type === 'expense' ? '支出' : '收入'}分类：
+            </h4>
+            <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+              {currentPresets.map((preset, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  onClick={() => handlePresetSelect(preset)}
+                  className="flex items-center space-x-1 p-2 text-sm bg-white hover:bg-blue-50 border border-gray-200 rounded-md transition-colors"
+                >
+                  <span>{preset.icon}</span>
+                  <span className="truncate">{preset.name}</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* Actions */}
-        <div className="flex space-x-3 pt-4">
-          <button
-            type="button"
-            onClick={onClose}
-            className="btn btn-secondary flex-1 py-2"
-          >
+        <div>
+          <label htmlFor="category-icon" className="block text-sm font-medium text-gray-700">
+            图标 (Emoji)
+          </label>
+          <input
+            type="text"
+            id="category-icon"
+            value={icon}
+            onChange={(e) => setIcon(e.target.value)}
+            className="input mt-1"
+            placeholder="例如：🚗"
+            maxLength="2"
+            required
+          />
+        </div>
+
+        <div>
+          <span className="block text-sm font-medium text-gray-700">类型</span>
+          <div className="mt-2 flex space-x-4">
+            <label className="inline-flex items-center">
+              <input
+                type="radio"
+                className="form-radio"
+                name="type"
+                value="expense"
+                checked={type === 'expense'}
+                onChange={() => {
+                  setType('expense');
+                  if (showPresets) {
+                    setName('');
+                    setIcon('💰');
+                  }
+                }}
+              />
+              <span className="ml-2">支出</span>
+            </label>
+            <label className="inline-flex items-center">
+              <input
+                type="radio"
+                className="form-radio"
+                name="type"
+                value="income"
+                checked={type === 'income'}
+                onChange={() => {
+                  setType('income');
+                  if (showPresets) {
+                    setName('');
+                    setIcon('💰');
+                  }
+                }}
+              />
+              <span className="ml-2">收入</span>
+            </label>
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-4">
+          <button type="button" onClick={onClose} className="btn-secondary mr-3">
             取消
           </button>
-          <button
-            type="submit"
-            className="btn btn-primary flex-1 py-2 flex items-center justify-center space-x-2"
-          >
-            <Save className="h-4 w-4" />
-            <span>{category ? '更新分类' : '保存分类'}</span>
+          <button type="submit" className="btn-primary">
+            {editingCategory ? '更新' : '保存'}
           </button>
         </div>
       </form>
-    </div>
-  )
-}
+    </Modal>
+  );
+};
 
-export default CategoryForm
+export default CategoryForm;
