@@ -13,7 +13,7 @@ const TransactionForm = ({ isOpen, onClose, editingTransaction }) => {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [description, setDescription] = useState('');
 
-  const filteredCategories = categories.filter(c => c.type === type);
+  const filteredCategories = categories;
 
   useEffect(() => {
     if (editingTransaction) {
@@ -35,8 +35,7 @@ const TransactionForm = ({ isOpen, onClose, editingTransaction }) => {
   useEffect(() => {
     // Update category when type changes
     if (!editingTransaction) {
-        const newFilteredCategories = categories.filter(c => c.type === type);
-        setCategoryId(newFilteredCategories.length > 0 ? newFilteredCategories[0].id : '');
+        setCategoryId(categories.length > 0 ? categories[0].id : '');
     }
   }, [type, categories, editingTransaction]);
 

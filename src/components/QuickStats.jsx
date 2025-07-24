@@ -8,7 +8,7 @@ const QuickStats = ({ transactions, categories }) => {
     const categoryTotals = {}
 
     expenseTransactions.forEach(transaction => {
-      const categoryId = transaction.category
+      const categoryId = transaction.categoryId || transaction.category?.id || 'unknown'
       if (!categoryTotals[categoryId]) {
         categoryTotals[categoryId] = 0
       }

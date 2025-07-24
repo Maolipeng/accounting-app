@@ -1,216 +1,118 @@
 import React, { useState, useEffect } from 'react';
-import Modal from './Modal';
-import { useTransactions } from '../context/TransactionContext';
 import { useToast } from '../context/ToastContext';
+import api from '../services/api';
 
-// 常用分类预设
-const PRESET_CATEGORIES = {
-  expense: [
-    { name: '餐饮', icon: '🍽️' },
-    { name: '交通', icon: '🚗' },
-    { name: '购物', icon: '🛍️' },
-    { name: '娱乐', icon: '🎮' },
-    { name: '医疗', icon: '🏥' },
-    { name: '教育', icon: '📚' },
-    { name: '住房', icon: '🏠' },
-    { name: '通讯', icon: '📱' },
-    { name: '服装', icon: '👕' },
-    { name: '美容', icon: '💄' },
-    { name: '旅游', icon: '✈️' },
-    { name: '运动', icon: '⚽' },
-    { name: '宠物', icon: '🐕' },
-    { name: '礼品', icon: '🎁' },
-    { name: '保险', icon: '🛡️' },
-    { name: '维修', icon: '🔧' },
-    { name: '水电费', icon: '💡' },
-    { name: '网费', icon: '🌐' },
-    { name: '停车费', icon: '🅿️' },
-    { name: '其他', icon: '📦' }
-  ],
-  income: [
-    { name: '工资', icon: '💼' },
-    { name: '奖金', icon: '🏆' },
-    { name: '投资', icon: '📈' },
-    { name: '兼职', icon: '💻' },
-    { name: '红包', icon: '🧧' },
-    { name: '退款', icon: '💰' },
-    { name: '租金', icon: '🏠' },
-    { name: '利息', icon: '🏦' },
-    { name: '分红', icon: '💎' },
-    { name: '奖励', icon: '🎖️' },
-    { name: '礼金', icon: '💝' },
-    { name: '补贴', icon: '🎯' },
-    { name: '其他', icon: '💸' }
-  ]
-};
+const presetIcons = [
+  { icon: '🍔', name: '餐饮' }, { icon: '🛒', name: '购物' }, { icon: '🚗', name: '交通' },
+  { icon: '🏠', name: '住房' }, { icon: '🎬', name: '娱乐' }, { icon: '❤️', name: '健康' },
+  { icon: '🎓', name: '学习' }, { icon: '💼', name: '办公' }, { icon: '🎁', name: '礼物' },
+  { icon: '🐶', name: '宠物' }, { icon: '🧾', name: '账单' }, { icon: '📈', name: '投资' },
+  { icon: '🍕', name: '零食' }, { icon: '☕️', name: '饮品' }, { icon: '👕', name: '服饰' },
+  { icon: '💻', name: '数码' }, { icon: '💪', name: '运动' }, { icon: '🏥', name: '医疗' },
+  { icon: '📱', name: '通讯' }, { icon: '💡', name: '生活缴费' }, { icon: '💇‍♀️', name: '美容美发' },
+  { icon: '✈️', name: '旅行' }, { icon: '💰', name: '工资' }, { icon: '❓', name: '其他' },
+];
 
-const CategoryForm = ({ isOpen, onClose, editingCategory }) => {
+const CategoryForm = ({ isOpen, onClose, editingCategory, onSave }) => {
   const [name, setName] = useState('');
-  const [type, setType] = useState('expense');
-  const [icon, setIcon] = useState('💰');
-  const [showPresets, setShowPresets] = useState(false);
-  const { addCategory, updateCategory } = useTransactions();
+  const [icon, setIcon] = useState('📁');
+  const [color, setColor] = useState('#cccccc');
   const { showToast } = useToast();
 
   useEffect(() => {
     if (editingCategory) {
       setName(editingCategory.name);
-      setType(editingCategory.type);
       setIcon(editingCategory.icon);
-      setShowPresets(false);
+      setColor(editingCategory.color);
     } else {
-      // Reset form when adding a new category
       setName('');
-      setType('expense');
-      setIcon('💰');
-      setShowPresets(false);
+      setIcon('📁');
+      setColor('#cccccc');
     }
   }, [editingCategory, isOpen]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name.trim() || !icon.trim()) {
-      showToast('分类名称和图标不能为空', 'error');
-      return;
-    }
+    const categoryData = { name, icon, color };
 
-    const categoryData = { name, type, icon };
-
-    if (editingCategory) {
-      updateCategory({ ...editingCategory, ...categoryData });
-      showToast('分类更新成功', 'success');
-    } else {
-      addCategory(categoryData);
-      showToast('分类添加成功', 'success');
+    try {
+      let response;
+      if (editingCategory) {
+        response = await api.categories.update(editingCategory.id, categoryData);
+      } else {
+        response = await api.categories.create(categoryData);
+      }
+      onSave(response.category);
+      onClose();
+      showToast(`分类已${editingCategory ? '更新' : '创建'}`, 'success');
+    } catch (error) {
+      console.error('分类操作错误:', error);
+      // 尝试从不同位置获取错误信息
+      const errorMessage = 
+        error.response?.data?.error || // API 返回的错误
+        error.message || // JS 错误对象
+        '分类操作失败'; // 默认错误信息
+      showToast(errorMessage, 'error');
     }
-    onClose();
   };
 
-  const handlePresetSelect = (preset) => {
-    setName(preset.name);
-    setIcon(preset.icon);
-    setShowPresets(false);
-  };
-
-  const currentPresets = PRESET_CATEGORIES[type];
+  if (!isOpen) return null;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={editingCategory ? '编辑分类' : '添加新分类'}>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label htmlFor="category-name" className="block text-sm font-medium text-gray-700">
-            分类名称
-          </label>
-          <div className="mt-1 flex space-x-2">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+      <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
+        <h2 className="text-2xl font-bold mb-4">{editingCategory ? '编辑分类' : '添加分类'}</h2>
+        <form onSubmit={handleSubmit}>
+          <div className="mb-4">
+            <label className="block text-gray-700">名称</label>
             <input
               type="text"
-              id="category-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="input flex-1"
-              placeholder="例如：餐饮、交通"
+              className="input"
               required
             />
-            {!editingCategory && (
-              <button
-                type="button"
-                onClick={() => setShowPresets(!showPresets)}
-                className="px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
-              >
-                {showPresets ? '隐藏' : '预设'}
-              </button>
-            )}
           </div>
-        </div>
-
-        {/* 预设分类选择 */}
-        {showPresets && !editingCategory && (
-          <div className="bg-gray-50 p-3 rounded-lg">
-            <h4 className="text-sm font-medium text-gray-700 mb-2">
-              选择常用{type === 'expense' ? '支出' : '收入'}分类：
-            </h4>
-            <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
-              {currentPresets.map((preset, index) => (
+          <div className="mb-4">
+            <label className="block text-gray-700">图标 (Emoji)</label>
+            <input
+              type="text"
+              value={icon}
+              onChange={(e) => setIcon(e.target.value)}
+              className="input mb-2"
+              maxLength="2"
+              required
+            />
+            <div className="grid grid-cols-8 gap-2 bg-gray-100 p-2 rounded-lg max-h-32 overflow-y-auto">
+              {presetIcons.map(preset => (
                 <button
-                  key={index}
+                  key={preset.icon}
                   type="button"
-                  onClick={() => handlePresetSelect(preset)}
-                  className="flex items-center space-x-1 p-2 text-sm bg-white hover:bg-blue-50 border border-gray-200 rounded-md transition-colors"
+                  title={preset.name}
+                  onClick={() => setIcon(preset.icon)}
+                  className={`text-2xl rounded-md p-1 transition-transform duration-150 ${icon === preset.icon ? 'bg-blue-500 scale-110 text-white' : 'hover:bg-gray-300'}`}
                 >
-                  <span>{preset.icon}</span>
-                  <span className="truncate">{preset.name}</span>
+                  {preset.icon}
                 </button>
               ))}
             </div>
           </div>
-        )}
-
-        <div>
-          <label htmlFor="category-icon" className="block text-sm font-medium text-gray-700">
-            图标 (Emoji)
-          </label>
-          <input
-            type="text"
-            id="category-icon"
-            value={icon}
-            onChange={(e) => setIcon(e.target.value)}
-            className="input mt-1"
-            placeholder="例如：🚗"
-            maxLength="2"
-            required
-          />
-        </div>
-
-        <div>
-          <span className="block text-sm font-medium text-gray-700">类型</span>
-          <div className="mt-2 flex space-x-4">
-            <label className="inline-flex items-center">
-              <input
-                type="radio"
-                className="form-radio"
-                name="type"
-                value="expense"
-                checked={type === 'expense'}
-                onChange={() => {
-                  setType('expense');
-                  if (showPresets) {
-                    setName('');
-                    setIcon('💰');
-                  }
-                }}
-              />
-              <span className="ml-2">支出</span>
-            </label>
-            <label className="inline-flex items-center">
-              <input
-                type="radio"
-                className="form-radio"
-                name="type"
-                value="income"
-                checked={type === 'income'}
-                onChange={() => {
-                  setType('income');
-                  if (showPresets) {
-                    setName('');
-                    setIcon('💰');
-                  }
-                }}
-              />
-              <span className="ml-2">收入</span>
-            </label>
+          <div className="mb-4">
+            <label className="block text-gray-700">颜色</label>
+            <input
+              type="color"
+              value={color}
+              onChange={(e) => setColor(e.target.value)}
+              className="w-full h-10 p-1 border rounded"
+            />
           </div>
-        </div>
-
-        <div className="flex justify-end pt-4">
-          <button type="button" onClick={onClose} className="btn-secondary mr-3">
-            取消
-          </button>
-          <button type="submit" className="btn-primary">
-            {editingCategory ? '更新' : '保存'}
-          </button>
-        </div>
-      </form>
-    </Modal>
+          <div className="flex justify-end space-x-4">
+            <button type="button" onClick={onClose} className="btn-secondary">取消</button>
+            <button type="submit" className="btn-primary">保存</button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 };
 

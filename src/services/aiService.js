@@ -1,3 +1,5 @@
+import api from './api'
+
 class AIService {
   constructor() {
     this.config = {
@@ -11,46 +13,112 @@ class AIService {
       model: 'glm-4v',
       enabled: false
     }
-    this.loadConfig()
+    this.isLoaded = false
   }
 
-  // 加载配置
-  loadConfig() {
+  // 从后端加载配置
+  async loadConfig() {
     try {
-      const saved = localStorage.getItem('aiConfig')
-      if (saved) {
-        this.config = { ...this.config, ...JSON.parse(saved) }
-      }
-      const savedZhipu = localStorage.getItem('zhipuConfig')
-      if (savedZhipu) {
-        let loadedZhipuConfig = JSON.parse(savedZhipu);
-        // 迁移旧的错误模型配置
-        if (loadedZhipuConfig.model === 'GLM-4-Flash-250414') {
-          loadedZhipuConfig.model = 'glm-4v';
-          localStorage.setItem('zhipuConfig', JSON.stringify(loadedZhipuConfig));
+      const response = await api.get('/ai-config')
+      if (response.data) {
+        this.config = {
+          provider: response.data.provider || 'deepseek',
+          apiKey: response.data.apiKey || '',
+          model: response.data.model || 'deepseek-chat',
+          enabled: response.data.enabled || false
         }
-        this.zhipuConfig = { ...this.zhipuConfig, ...loadedZhipuConfig }
+        this.zhipuConfig = {
+          apiKey: response.data.zhipuApiKey || '',
+          model: response.data.zhipuModel || 'glm-4v',
+          enabled: response.data.zhipuEnabled || false
+        }
       }
+      this.isLoaded = true
     } catch (error) {
       console.error('加载AI配置失败:', error)
+      // 如果加载失败，使用默认配置
+      this.isLoaded = true
     }
   }
 
-  // 更新配置
-  updateConfig(newConfig) {
-    this.config = { ...this.config, ...newConfig }
-    localStorage.setItem('aiConfig', JSON.stringify(this.config))
+  // 获取完整配置（包含API密钥）
+  async getFullConfig() {
+    try {
+      const response = await api.get('/ai-config/full')
+      if (response.data) {
+        this.config = {
+          provider: response.data.provider || 'deepseek',
+          apiKey: response.data.apiKey || '',
+          model: response.data.model || 'deepseek-chat',
+          enabled: response.data.enabled || false
+        }
+        this.zhipuConfig = {
+          apiKey: response.data.zhipuApiKey || '',
+          model: response.data.zhipuModel || 'glm-4v',
+          enabled: response.data.zhipuEnabled || false
+        }
+      }
+      return { config: this.config, zhipuConfig: this.zhipuConfig }
+    } catch (error) {
+      console.error('获取完整AI配置失败:', error)
+      return { config: this.config, zhipuConfig: this.zhipuConfig }
+    }
   }
 
-  // 更新智谱AI配置
-  updateZhipuConfig(newConfig) {
-    this.zhipuConfig = { ...this.zhipuConfig, ...newConfig }
-    localStorage.setItem('zhipuConfig', JSON.stringify(this.zhipuConfig))
+  // 更新配置到后端
+  async updateConfig(newConfig, newZhipuConfig = null) {
+    try {
+      const configData = {
+        provider: newConfig.provider || this.config.provider,
+        apiKey: newConfig.apiKey || this.config.apiKey,
+        model: newConfig.model || this.config.model,
+        enabled: newConfig.enabled !== undefined ? newConfig.enabled : this.config.enabled
+      }
+
+      if (newZhipuConfig) {
+        configData.zhipuApiKey = newZhipuConfig.apiKey || this.zhipuConfig.apiKey
+        configData.zhipuModel = newZhipuConfig.model || this.zhipuConfig.model
+        configData.zhipuEnabled = newZhipuConfig.enabled !== undefined ? newZhipuConfig.enabled : this.zhipuConfig.enabled
+      }
+
+      const response = await api.post('/ai-config', configData)
+      
+      if (response.data) {
+        // 更新本地配置
+        this.config = { ...this.config, ...configData }
+        if (newZhipuConfig) {
+          this.zhipuConfig = {
+            apiKey: configData.zhipuApiKey,
+            model: configData.zhipuModel,
+            enabled: configData.zhipuEnabled
+          }
+        }
+      }
+      
+      return response.data
+    } catch (error) {
+      console.error('保存AI配置失败:', error)
+      throw new Error(`保存AI配置失败: ${error.message}`)
+    }
+  }
+
+  // 确保配置已加载
+  async ensureConfigLoaded() {
+    if (!this.isLoaded) {
+      await this.loadConfig()
+    }
   }
 
   // 检查是否已配置
-  isConfigured() {
+  async isConfigured() {
+    await this.ensureConfigLoaded()
     return this.config.enabled && this.config.apiKey && this.config.provider
+  }
+
+  // 检查智谱AI是否已配置
+  async isZhipuConfigured() {
+    await this.ensureConfigLoaded()
+    return this.zhipuConfig.enabled && this.zhipuConfig.apiKey
   }
 
   // 获取API端点
@@ -67,7 +135,9 @@ class AIService {
   }
 
   // 获取请求头
-  getHeaders() {
+  async getHeaders() {
+    await this.ensureConfigLoaded()
+    
     const headers = {
       'Content-Type': 'application/json'
     }
@@ -123,12 +193,15 @@ class AIService {
 
   // 调用API
   async callAPI(messages, onChunk = null) {
-    if (!this.isConfigured()) {
+    if (!(await this.isConfigured())) {
       throw new Error('AI服务未配置')
     }
 
+    // 确保使用最新配置
+    await this.getFullConfig()
+
     const endpoint = this.getApiEndpoint()
-    const headers = this.getHeaders()
+    const headers = await this.getHeaders()
     const body = this.formatMessages(messages)
 
     // 如果有回调函数，启用流式响应
@@ -232,23 +305,22 @@ class AIService {
 
   // 智谱AI图片识别
   async recognizeImageWithZhipu(imageBase64, prompt = '请识别这张图片中的文字内容，特别是金额、商家名称、日期等信息') {
-    // 强制从localStorage重新加载最新的配置，确保实时性
-    const savedZhipu = localStorage.getItem('zhipuConfig');
-    const zhipuConfig = savedZhipu ? JSON.parse(savedZhipu) : { model: 'glm-4v', enabled: false };
-    
-    if (!zhipuConfig.apiKey || !zhipuConfig.enabled) {
+    if (!(await this.isZhipuConfigured())) {
       throw new Error('智谱AI未配置或未启用')
     }
+
+    // 确保使用最新配置
+    await this.getFullConfig()
 
     try {
       const response = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${zhipuConfig.apiKey}`
+          'Authorization': `Bearer ${this.zhipuConfig.apiKey}`
         },
         body: JSON.stringify({
-          model: zhipuConfig.model || 'glm-4v',
+          model: this.zhipuConfig.model,
           messages: [
             {
               role: 'user',
@@ -292,7 +364,7 @@ class AIService {
     }
 
     // 其他支持视觉的AI服务
-    if (!this.isConfigured()) {
+    if (!(await this.isConfigured())) {
       throw new Error('AI服务未配置')
     }
 
@@ -377,7 +449,7 @@ ${text}
 
   // 分析财务数据
   async analyzeFinancialData(data) {
-    if (!this.isConfigured()) {
+    if (!(await this.isConfigured())) {
       throw new Error('AI服务未配置')
     }
 
@@ -426,11 +498,6 @@ ${budgets.map(budget => {
 
 // 创建单例实例
 const aiService = new AIService()
-
-// 导出解析交易文本的函数
-export const parseTransactionText = async (text, categories = []) => {
-  return await aiService.parseTransactionFromText(text, categories);
-};
 
 export default aiService
 export { aiService }

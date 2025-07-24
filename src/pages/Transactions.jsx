@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useTransactions } from '../context/TransactionContext';
 import TransactionForm from '../components/TransactionForm';
 import AIImport from '../components/AIImport';
-import { Plus, Edit, Trash2, Filter, Search, ArrowUpDown, Sparkles } from 'lucide-react';
+import { Plus, Edit, Trash2, Filter, Search, ArrowUpDown, Sparkles, CalendarRange } from 'lucide-react';
 
 const Transactions = () => {
   const { transactions, categories, deleteTransaction } = useTransactions();
@@ -15,6 +15,11 @@ const Transactions = () => {
   const [filterType, setFilterType] = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
   const [sortOrder, setSortOrder] = useState('desc');
+  const [showDateFilter, setShowDateFilter] = useState(false);
+  const [dateRange, setDateRange] = useState({
+    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0], // 当月第一天
+    endDate: new Date().toISOString().split('T')[0] // 今天
+  });
 
   const handleAddNew = () => {
     setEditingTransaction(null);
@@ -55,12 +60,25 @@ const Transactions = () => {
       filtered = filtered.filter(t => t.categoryId === filterCategory);
     }
 
+    // 日期范围过滤
+    if (showDateFilter) {
+      const startDate = new Date(dateRange.startDate);
+      const endDate = new Date(dateRange.endDate);
+      // 设置结束日期为当天的23:59:59，确保包含当天的所有交易
+      endDate.setHours(23, 59, 59, 999);
+      
+      filtered = filtered.filter(t => {
+        const transactionDate = new Date(t.date);
+        return transactionDate >= startDate && transactionDate <= endDate;
+      });
+    }
+
     return filtered.sort((a, b) => {
       const dateA = new Date(a.date);
       const dateB = new Date(b.date);
       return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
     });
-  }, [transactions, searchTerm, filterType, filterCategory, sortOrder]);
+  }, [transactions, searchTerm, filterType, filterCategory, sortOrder, showDateFilter, dateRange]);
 
   return (
     <div className="space-y-6">
@@ -80,6 +98,51 @@ const Transactions = () => {
 
       {/* Filters and Search */}
       <div className="card">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="flex border rounded-md overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowDateFilter(false)}
+              className={`px-3 py-2 text-sm whitespace-nowrap ${
+                !showDateFilter 
+                  ? 'bg-blue-50 text-blue-700 font-medium' 
+                  : 'bg-white text-gray-700'
+              }`}
+            >
+              全部日期
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDateFilter(true)}
+              className={`px-3 py-2 text-sm whitespace-nowrap ${
+                showDateFilter 
+                  ? 'bg-blue-50 text-blue-700 font-medium' 
+                  : 'bg-white text-gray-700'
+              }`}
+            >
+              自定义日期
+            </button>
+          </div>
+          
+          {showDateFilter && (
+            <div className="flex flex-nowrap items-center space-x-2">
+              <input 
+                type="date" 
+                value={dateRange.startDate} 
+                onChange={(e) => setDateRange({...dateRange, startDate: e.target.value})}
+                className="input text-sm py-1.5 w-auto"
+              />
+              <span className="text-gray-500 whitespace-nowrap">至</span>
+              <input 
+                type="date" 
+                value={dateRange.endDate} 
+                onChange={(e) => setDateRange({...dateRange, endDate: e.target.value})}
+                className="input text-sm py-1.5 w-auto"
+              />
+            </div>
+          )}
+        </div>
+        
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Search */}
           <div className="relative">

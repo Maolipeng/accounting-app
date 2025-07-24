@@ -57,12 +57,13 @@ const AIAssistant = () => {
     }
   }
 
-  // 组件加载时获取AI分析
+  // 组件加载时获取AI分析，但只在必要时请求
   useEffect(() => {
-    if (isOpen && activeTab === 'insights' && !aiAnalysis && transactions.length > 0) {
+    // 只有当面板打开、在洞察标签页、没有现有分析且有交易数据时才请求
+    if (isOpen && activeTab === 'insights' && !aiAnalysis && transactions.length > 0 && !isLoading) {
       getAIAnalysis()
     }
-  }, [isOpen, activeTab, transactions.length])
+  }, [isOpen, activeTab]) // 只在面板打开或标签切换时触发
   
   // 预定义的问题和回答
   const predefinedQA = {

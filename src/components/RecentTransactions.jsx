@@ -13,7 +13,7 @@ const RecentTransactions = ({ transactions, categories, showAddButton = true, on
   }
 
   const getCategoryData = (categoryId) => {
-    return categories.find(c => c.id === categoryId) || { name: categoryId, icon: '📝', color: '#6b7280' }
+    return categories.find(c => c.id === categoryId) || { name: '未分类', icon: '📝', color: '#6b7280' }
   }
 
   if (transactions.length === 0) {
@@ -48,7 +48,7 @@ const RecentTransactions = ({ transactions, categories, showAddButton = true, on
 
       <div className="space-y-3">
         {transactions.map((transaction) => {
-          const category = getCategoryData(transaction.category)
+          const category = getCategoryData(transaction.categoryId || transaction.category?.id)
           return (
             <div
               key={transaction.id}

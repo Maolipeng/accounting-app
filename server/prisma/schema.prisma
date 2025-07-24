@@ -1,0 +1,96 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  username  String   @unique
+  password  String
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 关联交易记录
+  transactions Transaction[]
+  categories   Category[]
+  budgets      Budget[]
+  aiConfig     AIConfig?
+
+  @@map("users")
+}
+
+model Category {
+  id     String @id @default(cuid())
+  name   String
+  icon   String
+  color  String
+  userId String
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@map("categories")
+}
+
+model Transaction {
+  id          String   @id @default(cuid())
+  amount      Float
+  type        String   // 'income' or 'expense'
+  description String?
+  date        DateTime
+  categoryId  String
+  userId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id])
+
+  @@map("transactions")
+}
+
+model Budget {
+  id         String   @id @default(cuid())
+  categoryId String
+  amount     Float
+  period     String   // 'monthly', 'yearly'
+  startDate  DateTime
+  endDate    DateTime
+  userId     String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("budgets")
+}
+
+model AIConfig {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  provider  String   // 'deepseek', 'openai', 'moonshot', etc.
+  apiKey    String
+  model     String
+  enabled   Boolean  @default(false)
+  
+  // 智谱AI配置 (用于图片识别)
+  zhipuApiKey    String?
+  zhipuModel     String?
+  zhipuEnabled   Boolean @default(false)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("ai_configs")
+}
